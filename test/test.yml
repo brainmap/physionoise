@@ -1,0 +1,37 @@
+--- 
+- :phys_directory: awr001_7854_02102009/phys
+  :respiration_trigger: TrigResp_epiRT_0210200914_22_58
+  :bold_reps: 235
+  :series_description: fMRI ASSET RUN 1
+  :cardiac_signal: ECGData_epiRT_0210200914_22_58
+  :rep_time: 2.0
+  :cardiac_trigger: TrigEcg_epiRT_0210200914_22_58
+  :run_directory: awr001_7854_02102009/004
+  :respiration_signal: RespData_epiRT_0210200914_22_58
+- :phys_directory: awr001_7854_02102009/phys
+  :respiration_trigger: TrigResp_epiRT_0210200914_34_30
+  :bold_reps: 235
+  :series_description: fMRI ASSET RUN 2
+  :cardiac_signal: ECGData_epiRT_0210200914_34_30
+  :rep_time: 2.0
+  :cardiac_trigger: TrigEcg_epiRT_0210200914_34_30
+  :run_directory: awr001_7854_02102009/005
+  :respiration_signal: RespData_epiRT_0210200914_34_30
+- :phys_directory: awr001_7854_02102009/phys
+  :respiration_trigger: TrigResp_epiRT_0210200914_42_44
+  :bold_reps: 195
+  :series_description: fMRI ASSET REST 1
+  :cardiac_signal: ECGData_epiRT_0210200914_42_44
+  :rep_time: 2.0
+  :cardiac_trigger: TrigEcg_epiRT_0210200914_42_44
+  :run_directory: awr001_7854_02102009/006
+  :respiration_signal: RespData_epiRT_0210200914_42_44
+- :phys_directory: awr001_7854_02102009/phys
+  :respiration_trigger: TrigResp_epiRT_0210200914_49_43
+  :bold_reps: 165
+  :series_description: fMRI ASSET REST 2
+  :cardiac_signal: ECGData_epiRT_0210200914_49_43
+  :rep_time: 2.0
+  :cardiac_trigger: TrigEcg_epiRT_0210200914_49_43
+  :run_directory: awr001_7854_02102009/007
+  :respiration_signal: RespData_epiRT_0210200914_49_43

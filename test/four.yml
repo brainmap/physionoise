@@ -1,0 +1,10 @@
+---
+- :phys_directory: awr001_7854_02102009/phys
+  :respiration_trigger: TrigResp_epiRT_0210200914_49_43
+  :bold_reps: 165
+  :series_description: fMRI ASSET REST 2
+  :cardiac_signal: ECGData_epiRT_0210200914_49_43
+  :rep_time: 2.0
+  :cardiac_trigger: TrigEcg_epiRT_0210200914_49_43
+  :run_directory: awr001_7854_02102009/007
+  :respiration_signal: RespData_epiRT_0210200914_49_43
