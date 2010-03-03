@@ -24,7 +24,7 @@ def run_physionoise_on(runs, opts)
     cmdfmt = "python physionoise.py -c %s -o %s -r %s -p %s --TR %s --numTR %s"
     cmd = cmdfmt % [cardsig, cardtrig, respsig, prefix, tr, num_tr]
     cmd = "#{cmd} #{opts.join(' ')}"
-    # puts cmd
+    puts cmd
     system(cmd)
   end
 end

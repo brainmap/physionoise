@@ -92,14 +92,14 @@ def parseargs():
 		help="read cardiac pulse ox trigger from FILE",
 		metavar="FILE")
 	parser.add_option("--TR",action="store",type="float",dest="TR",
-		help="TR is TR seconds [2.5]",
-		metavar="TR", default=2.5)
+		help="TR is TR seconds [2.0]",
+		metavar="TR", default=2.0)
 	parser.add_option("--numTR",action="store",type="int",dest="NumTR",
 		help="Number of TRs [480]",
 		metavar="TR", default=480)
 	parser.add_option("--inputHz",action="store",type="int",dest="OrigSamp",
-		help="input frequency in Hz[1000]",
-		metavar="Hz", default=1000)
+		help="input frequency in Hz[40]",
+		metavar="Hz", default=40)
 	parser.add_option("--outputHz",action="store",type="int",dest="NewSamp",
 		help="desired output frequency in Hz[40]",
 		metavar="Hz", default=40)
@@ -150,6 +150,10 @@ def parseargs():
 	parser.add_option("--saveFiles", action="store_true",dest="saveFiles",
 		help="Write a gamut regressors out to separate text files.",
 		default=False)
+	parser.add_option("-t","--truncate", action="store", type="string", dest="truncate",
+		help="Truncate the signals to expected length based on TRs. Truncation can \
+		be either at the front, [end], or none.",
+		metavar="SIDE", default="end")
 
 	options, args = parser.parse_args()
 
@@ -371,8 +375,8 @@ def resample_to_tr(signal, input_sample_rate, num_trs, tr_time, tr_multiplier=1.
 	Checks whether the given tr information
 	is consistent with the length of the signal.  Optionally you can specify to
 	resample in some multiple of tr's as well."""
-	epoch = num_trs * tr_time
-	expected_signal_length = int(epoch * input_sample_rate)
+	run_duration = num_trs * tr_time
+	expected_signal_length = int(run_duration * input_sample_rate)
 	resample_size = int(num_trs / tr_multiplier)
 	
 	if len(signal) != expected_signal_length:
@@ -427,7 +431,7 @@ def spectral_analysis(filtered_signal, sample_rate, signal_name="unknown"):
 	period        = 1.0 / max_frequency
 	
 	if max_frequency == 0:
-		logger.warning("Respiratory power peak at zero. Threshold at %f Hz" % freqs[4])
+		logger.warning("%s power peak at zero. Threshold at %f Hz" % (signal_name, freqs[4]))
 		i = pxx[5:].argmax()
 		max_frequency = freqs[i+5]
 		max_power     = pxx[i+5]
@@ -507,7 +511,6 @@ def spikewave(signal, locations):
 
 def main(options, args):
 	"""The main procedure of physionoise"""
-	print("in main")
 	initialize_logger()
 	if (options.verbosity == 1): logger.setLevel(logging.INFO)
 	if (options.verbosity == 2): logger.setLevel(logging.DEBUG)
@@ -533,6 +536,7 @@ def main(options, args):
 	input_signal_length    = int(num_tr * tr_time * input_sample_rate)
 	output_signal_length   = int(num_tr * tr_time * output_sample_rate)
 	
+	# these options are for tuning the peakdet algorithm
 	respiratory_dm         = options.RMagThresh
 	respiratory_dt         = options.RTimeThresh  # in seconds!
 	cardiac_dm             = options.CMagThresh
@@ -541,10 +545,21 @@ def main(options, args):
 	plots_requested        = options.PlotAll
 	use_fast_spline        = options.Speed
 	prefix                 = options.Prefix
+	truncate               = options.truncate
 	
-	CPttl = (numpy.zeros(len(cardiac_signal)) != 0)
+	# converting absolute event times from the trigger file to a boolean array
+	CPttl = (numpy.zeros(len(cardiac_signal)) != 0) # array of Falses same size as signal
 	CPttl[cardiac_triggers] = True
 	
+	
+	### NOTE on encoding events ###
+	# in all cases where we want to denote a series of events in a signal, we will
+	# use an array of booleans.  For example, if we want to know where signal
+	# peaks are we create an array of the same size as the signal with True entries
+	# where each of the peaks occured and False everywhere else.
+	# These boolean arrays can be used conveniently to index into the signals
+	# e.g. signal[peaks] => produces the magnitude of the signal at the peaks.
+	#
 	
 	
 	####  Butterworth Filter Data  ###
@@ -555,6 +570,8 @@ def main(options, args):
 	filtered_respiratory = filtfilt(filter_b, filter_a, respiratory_signal)
 	filtered_cardiac     = filtfilt(filter_b, filter_a, cardiac_signal)
 	
+	# the spectral analyses are just for plotting, they are currently not saved
+	# to file at the end
 	pxx, freqs, maxfreq, PeakPower, TPeriod = spectral_analysis(
 		filtered_respiratory, input_sample_rate, "Respiratory"
 	)
@@ -598,7 +615,7 @@ def main(options, args):
 	
 	
 	
-	#----------------------------------------------------------  Data is now clean
+	#----------------------------------------------------------  Finding peaks
 	respiratory_extrema = extrema(respiratory_spline, respiratory_dm, respiratory_dt)
 	respiratory_maxima  = maxima(respiratory_spline, respiratory_dm, respiratory_dt)
 	respiratory_minima  = minima(respiratory_spline, respiratory_dm, respiratory_dt)
@@ -637,19 +654,32 @@ def main(options, args):
 	cardiac_d3 = slopes(cardiac_xaxis, cardiac_d2) #* input_sample_rate
 	smoothed_caradiac_d3 = cmov_average(cardiac_d3, input_sample_rate / 2)
 	
+	# caution: using 1.0 for the amplitude threshold for peak finding, this might
+	# not always work well.
 	card_d3_maxima  = maxima(smoothed_caradiac_d3, 1.0, cardiac_dt)
 	card_d3_minima  = minima(smoothed_caradiac_d3, 1.0, cardiac_dt)
 	
 	logger.info( "Thresholding CPd3" )
-	# there are several filters for acceptable d3 minima to include in CPd3:
+	CPd3 = card_d3_minima
+	card_d3_bottom_envelope = envelope(smoothed_caradiac_d3, card_d3_minima)
+	card_d3_top_envelope    = envelope(smoothed_caradiac_d3, card_d3_maxima)
+	# There have been several approaches to filtering acceptable d3 minima 
+	# to include in CPd3:
 	# 1. the min must be in a region where d1 is negative
 	# 2. the min must be less than the top envelope at that point
 	# 3. the min must be less than 0.5 * the mean of the top envelope
-
-	card_d3_bottom_envelope = envelope(smoothed_caradiac_d3, card_d3_minima)
-	card_d3_top_envelope    = envelope(smoothed_caradiac_d3, card_d3_maxima)
-	CPd3 = card_d3_minima
+	#
+	# The current approach, calculate the bottom envelope and compute a moving
+	# average of it at 1.5 * the sampling rate, accept any minima that
+	# are <= the moving average.  The motivation for this is that in most cases
+	# there are two classes of minima that are relatively seperable locally but 
+	# not globally.  The moving average provides a consistent margin between the 
+	# classes at the local level.
+	
 	CPd3 &= (card_d3_bottom_envelope <= cmov_average(card_d3_bottom_envelope, input_sample_rate*1.5))
+	
+	# Older minima filtering approaches
+	#
 	# CPd3 &= (cardiac_d1 >= -0.5)
 	# CPd3 &= (card_d3_bottom_envelope <= mean(card_d3_bottom_envelope))
 	# CPd3 &= (abs(card_d3_bottom_envelope) >= abs(card_d3_top_envelope))
@@ -657,7 +687,7 @@ def main(options, args):
 	# CPd3 = -1.0 * spikewave(smoothed_caradiac_d3, CPd3)
 	
 	# R waves are d3 peaks that immediately precede CPd3 blips
-	CPd3Rwave = (CPd3 == 2) # this gives a boolean array of all falses.
+	CPd3Rwave = (numpy.zeros(len(CPd3)) != 0)  # boolean array of all falses.
 	for i in indices_of(CPd3):
 		previous_d3_maxima = card_d3_maxima[0:i]
 		if (len(indices_of(previous_d3_maxima)) > 0):
@@ -681,7 +711,7 @@ def main(options, args):
 	logger.info( "Downsampling" )
 	
 	downsampled_respiratory = downsample(respiratory_spline, sample_ratio)
-	downsampled_cardiac = downsample(cardiac_spline, sample_ratio)
+	downsampled_cardiac     = downsample(cardiac_spline,     sample_ratio)
 	
 	
 	
@@ -712,8 +742,8 @@ def main(options, args):
 		plt.figure(2)
 		plt.subplot(211)
 		plt.plot(respiratory_xaxis, filtered_respiratory, 'b-',
-		         respiratory_xaxis, respiratory_spline, 'go',
-		         respiratory_xaxis, respiratory_signal, 'k',
+		         respiratory_xaxis, respiratory_spline,   'go',
+		         respiratory_xaxis, respiratory_signal,   'k',
 		         respiratory_xaxis, respiratory_residual, 'r'
 		)
 		plt.legend(('Filtered', 'Spline', 'Raw', 'Residual'), shadow=False, loc=1)
@@ -725,9 +755,9 @@ def main(options, args):
 		plt.title('Respiratory')
 		plt.subplot(212)
 		plt.plot(cardiac_xaxis, filtered_cardiac, 'b-',
-		         cardiac_xaxis, cardiac_spline, 'go',
-		         cardiac_xaxis, cardiac_signal, 'k',
-		         cardiac_xaxis, cardiac_residual,'r'
+		         cardiac_xaxis, cardiac_spline,   'go',
+		         cardiac_xaxis, cardiac_signal,   'k',
+		         cardiac_xaxis, cardiac_residual, 'r'
 		)
 		plt.legend(('Filtered','Spline','Raw','Residual'), shadow=False, loc=1)
 		ltext = plt.gca().get_legend().get_texts()
@@ -759,12 +789,15 @@ def main(options, args):
 		chart_summary_of_signals(signals_to_plot, labels, figure=5)
 		
 		# cardiac wave events viewed on the spline 
+		# make cardiac_d3 in roughly the same range as the spline
+		adjustment_ratio = numpy.nanmax(cardiac_spline) / numpy.nanmax(smoothed_caradiac_d3)
+		adjusted_d3      = smoothed_caradiac_d3 * 1.5 * adjustment_ratio
 		plt.figure(6)
 		plt.title('Event Locations on the Cardiac Waveform')
 		plt.hold()
 		plt.plot(cardiac_signal, '#aaaaaa')
 		plt.plot(cardiac_spline, 'k')
-		plt.plot(smoothed_caradiac_d3/numpy.nanmax(smoothed_caradiac_d3)*1.5*numpy.nanmax(cardiac_spline), '#ff5555')
+		plt.plot(adjusted_d3, '#ff5555')
 		plt.plot(indices_of(CPttl), cardiac_spline[CPttl], 'yo')
 		plt.plot(indices_of(CPd3), cardiac_spline[CPd3], 'bo')
 		plt.plot(indices_of(CPd3Rwave), cardiac_spline[CPd3Rwave], 'go')
@@ -783,27 +816,50 @@ def main(options, args):
 	#--------------------------------------------------- Trim length for retroicor
 	logger.info( "Trim length" )
 	
-	expected_length_at_input_sample_rate = tr_time * num_tr * input_sample_rate
-	expected_length_at_downsample_rate = tr_time * num_tr * output_sample_rate
+	# expected length at input sample rate
+	ei = tr_time * num_tr * input_sample_rate
 	
-	respiratory_spline = respiratory_spline[0:expected_length_at_input_sample_rate]
-	cardiac_spline     = cardiac_spline[0:expected_length_at_input_sample_rate]
-	CPd3               = CPd3[0:expected_length_at_input_sample_rate]
-	CPd3Rwave          = CPd3Rwave[0:expected_length_at_input_sample_rate]
-	CPttl              = CPttl[0:expected_length_at_input_sample_rate]
-	RRT                = RRT[0:expected_length_at_input_sample_rate]
-	CRTd3              = CRTd3[0:expected_length_at_input_sample_rate]
-	CRTttl             = CRTttl[0:expected_length_at_input_sample_rate]
-	CRTd3R             = CRTd3R[0:expected_length_at_input_sample_rate]
-	resp_top_envelope  = resp_top_envelope[0:expected_length_at_input_sample_rate]
-	card_top_envelope  = card_top_envelope[0:expected_length_at_input_sample_rate]
+	# expected length at downsample rate
+	ed =   tr_time * num_tr * output_sample_rate
 	
-	downsampled_cardiac     = downsampled_cardiac[0:expected_length_at_downsample_rate]
-	downsampled_respiratory = downsampled_respiratory[0:expected_length_at_downsample_rate]
+	if (truncate == 'end'):
+		logger.info( "Truncating at end of signal" )
+		respiratory_spline      = respiratory_spline[0:ei]
+		cardiac_spline          = cardiac_spline[0:ei]
+		CPd3                    = CPd3[0:ei]
+		CPd3Rwave               = CPd3Rwave[0:ei]
+		CPttl                   = CPttl[0:ei]
+		RRT                     = RRT[0:ei]
+		CRTd3                   = CRTd3[0:ei]
+		CRTttl                  = CRTttl[0:ei]
+		CRTd3R                  = CRTd3R[0:ei]
+		resp_top_envelope       = resp_top_envelope[0:ei]
+		card_top_envelope       = card_top_envelope[0:ei]
+		downsampled_cardiac     = downsampled_cardiac[0:ed]
+		downsampled_respiratory = downsampled_respiratory[0:ed]
+	elif (truncate == 'front'):
+		logger.info( "Truncating at front of signal" )
+		ei_front = len(respiratory_spline) - ei
+		ed_front = len(downsampled_respiratory) - ed
+		
+		respiratory_spline      = respiratory_spline[ei_front:]
+		cardiac_spline          = cardiac_spline[ei_front:]
+		CPd3                    = CPd3[ei_front:]
+		CPd3Rwave               = CPd3Rwave[ei_front:]
+		CPttl                   = CPttl[ei_front:]
+		RRT                     = RRT[ei_front:]
+		CRTd3                   = CRTd3[ei_front:]
+		CRTttl                  = CRTttl[ei_front:]
+		CRTd3R                  = CRTd3R[ei_front:]
+		resp_top_envelope       = resp_top_envelope[ei_front:]
+		card_top_envelope       = card_top_envelope[ei_front:]
+		downsampled_cardiac     = downsampled_cardiac[ed_front:]
+		downsampled_respiratory = downsampled_respiratory[ei_front:]
+	else:
+		logger.info( "Not truncating signal to expected TR size." )
 	
 	
-	
-	# Reporting
+	#---------------------------------------------------------------- Reporting
 	peaktypes = {
 		"CPttl": CPttl, "CPd3": CPd3, "CPd3Rwave": CPd3Rwave
 	}
@@ -858,8 +914,10 @@ def main(options, args):
 		# probably not needed, left over from original physionoise.py
 		dump(zeromin(downsampled_respiratory), 'resp_spline_downsampled', prefix, output_sample_rate)
 	
+	
 	if plots_requested:
 		plt.show()
+	
 	
 	sys.exit(0)
 
