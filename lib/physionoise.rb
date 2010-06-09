@@ -1,7 +1,7 @@
 require 'yaml'
 require 'metamri'
 
-class Physiospec
+class Physionoise
   
   attr_reader :raw_data_dir, :phys_data_dir, :spec
   attr_accessor :config

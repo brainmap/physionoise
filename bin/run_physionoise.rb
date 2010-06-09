@@ -6,13 +6,15 @@
 # == Copyright
 #   Copyright (c) 2010 WADRC Imaging Core.
 #
+$LOAD_PATH.unshift(File.join(File.dirname(__FILE__), '..', 'lib'))
 require 'logger'
 require 'optparse'
 require 'yaml'
+require 'physionoise'
 
 
-def run_physionoise_from_cli(runs, ARGV)
-  run_physionoise_on(runs, ARGV)
+def run_physionoise_from_cli(runs, *args)
+  Physionoise.run_physionoise_on(runs, args)
 end
 
 
