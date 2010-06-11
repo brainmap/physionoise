@@ -69,7 +69,7 @@ end
 
 if __FILE__ == $0
   opts = parse_options
-  physiospec = Physiospec.new(opts[:raw], opts[:phys])
+  physiospec = Physionoise.new(opts[:raw], opts[:phys])
   puts YAML::dump(physiospec.epis_and_associated_phys_files) if opts[:preview]
   unless opts[:yaml].nil?
     physiospec.to_yaml(opts[:yaml])

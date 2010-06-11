@@ -42,6 +42,12 @@ class Physionoise
     return @spec
   end
   
+  def associated_phys_files(dir)
+    # TODO
+    # Write a method that returns only the phys hash connected to a 
+    # specific EPI run directory.
+  end
+  
   def select_epis
     # scan raw data, pull out epi runs, sorted by timestamp
     visit = VisitRawDataDirectory.new(@raw_data_dir)
@@ -93,24 +99,30 @@ class Physionoise
     end
   end
   
+  # Runs physionoise.py on a set of runs to create regressors.
+  # Returns a ScriptError if the command doesn't complete sucessfully.
   def self.run_physionoise_on(runs, opts = Array.new)
-    physionoise_cmd = File.join(File.dirname(__FILE__), '..', 'bin', 'physionoise.py')
-    
     runs.each do |run|
-      cardsig = File.join run[:phys_directory], run[:cardiac_signal]
-      cardtrig = File.join run[:phys_directory], run[:cardiac_trigger]
-      respsig = File.join run[:phys_directory], run[:respiration_signal]
-      resptrig = File.join run[:phys_directory], run[:respiration_trigger]
-      prefix = run[:series_description].gsub(/ /,'_')
-      tr = run[:rep_time]
-      num_tr = run[:bold_reps]
-
-      cmdfmt = "python #{physionoise_cmd} -c %s -o %s -r %s -p %s --TR %s --numTR %s"
-      cmd = cmdfmt % [cardsig, cardtrig, respsig, prefix, tr, num_tr]
-      cmd = "#{cmd} #{opts.join(' ')}"
-      puts cmd
-      system(cmd)
+      cmd = self.build_run_cmd(run, opts)
+      unless system(cmd)
+        raise ScriptError, "There was a problem running #{cmd}"
+      end
     end
+  end
+  
+  def self.build_run_cmd(run, opts = Array.new)
+    physionoise_cmd = Pathname.new(File.join(File.dirname(__FILE__), '..', 'bin', 'physionoise.py')).realpath.to_s
+    cardsig = File.join run[:phys_directory], run[:cardiac_signal]
+    cardtrig = File.join run[:phys_directory], run[:cardiac_trigger]
+    respsig = File.join run[:phys_directory], run[:respiration_signal]
+    resptrig = File.join run[:phys_directory], run[:respiration_trigger]
+    prefix = run[:series_description].gsub(/ /,'_')
+    tr = run[:rep_time]
+    num_tr = run[:bold_reps]
+
+    cmdfmt = "python #{physionoise_cmd} -c %s -o %s -r %s -p %s --TR %s --numTR %s"
+    cmd = cmdfmt % [cardsig, cardtrig, respsig, prefix, tr, num_tr]
+    cmd = "#{cmd} #{opts.join(' ')}"
   end
   
 end
