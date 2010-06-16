@@ -20,7 +20,7 @@ require 'logger'
 require 'optparse'
 require 'yaml'
 require 'metamri'
-require 'physiospec'
+require 'physionoise'
 
 
 $LOG = Logger.new($stdout)
